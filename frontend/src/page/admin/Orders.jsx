@@ -225,7 +225,6 @@ const CreateSaleModal = ({ products, onClose, onSave, isSaving }) => {
               />
               <input
                 value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
                 onChange={(e) => {
                   let value = e.target.value.replace(/\D/g, "");
                   if (value.length > 10) value = value.slice(0, 10);
