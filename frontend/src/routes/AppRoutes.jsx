@@ -5,6 +5,7 @@ import ProtectedRoute from "../component/ProtectedRoute";
 import AdminLayout from "../layouts/AdminLayout";
 import Login from "../page/Login";
 import NotFound from "../page/NotFound";
+import Unauthorized from "../page/Unauthorized";
 import AdminDashboard from "../page/admin/AdminDashboard";
 import Inventory from "../page/admin/Inventory";
 import Orders from "../page/admin/Orders";
@@ -57,7 +58,7 @@ const AppRoutes = () => {
       </Route>
 
       <Route path="/" element={<RootRedirect />} />
-      <Route path="/unauthorized" element={<div className="flex items-center justify-center h-screen"><h1 className="text-2xl font-bold text-gray-700">403 — Unauthorized</h1></div>} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

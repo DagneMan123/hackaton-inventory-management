@@ -1,5 +1,6 @@
-import { createContext, useState } from "react";
+import { createContext, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
 export const UserContext = createContext();
 
@@ -8,7 +9,6 @@ export const UserProvider = ({ children }) => {
   const navigate = useNavigate();
 
   const [token, setToken] = useState(localStorage.getItem("token") || "");
-  const [role, setRole] = useState(localStorage.getItem("role") || "");
   const [user, setUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");
@@ -16,6 +16,17 @@ export const UserProvider = ({ children }) => {
       return null;
     }
   });
+  const [role, setRole] = useState(() => {
+    const savedRole = localStorage.getItem("role");
+    if (savedRole) return savedRole;
+    try {
+      const savedUser = JSON.parse(localStorage.getItem("user") || "null");
+      return savedUser?.role || "";
+    } catch {
+      return "";
+    }
+  });
+  const [loading, setLoading] = useState(!!localStorage.getItem("token"));
 
   const saveToken = (t) => {
     setToken(t);
@@ -42,6 +53,36 @@ export const UserProvider = ({ children }) => {
     navigate("/login", { replace: true });
   };
 
+  useEffect(() => {
+    const verifyUser = async () => {
+      const currentToken = localStorage.getItem("token");
+      if (!currentToken) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await axios.get(`${backendUrl}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${currentToken}` },
+        });
+        if (res.data?.success && res.data?.user) {
+          saveUser(res.data.user);
+          saveRole(res.data.user.role);
+        } else {
+          logout();
+        }
+      } catch (err) {
+        if (err.response?.status === 401 || err.response?.status === 403) {
+          logout();
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    verifyUser();
+  }, [backendUrl]);
+
   return (
     <UserContext.Provider
       value={{
@@ -53,6 +94,7 @@ export const UserProvider = ({ children }) => {
         setRole: saveRole,
         user,
         setUser: saveUser,
+        loading,
         logout,
       }}
     >

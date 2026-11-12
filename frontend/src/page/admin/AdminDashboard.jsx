@@ -21,8 +21,8 @@ const short_money = (v) => {
   return n.toString()
 }
 
-const StatCard = ({ title, value, icon: Icon, color, sub, to }) => (
-  <Link to={to} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow block">
+const StatCard = ({ title, value, icon: Icon, color, sub, to }) => {
+  const content = (
     <div className="flex items-start justify-between">
       <div>
         <p className="text-sm text-gray-500">{title}</p>
@@ -33,8 +33,18 @@ const StatCard = ({ title, value, icon: Icon, color, sub, to }) => (
         <Icon size={20} className="text-white" />
       </div>
     </div>
-  </Link>
-)
+  );
+
+  return to ? (
+    <Link to={to} className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition-shadow block">
+      {content}
+    </Link>
+  ) : (
+    <div className="bg-white rounded-xl border border-gray-200 p-5 block">
+      {content}
+    </div>
+  );
+};
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null
@@ -51,7 +61,8 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 const AdminDashboard = () => {
-  const { backendUrl, token } = useContext(UserContext)
+  const { backendUrl, token, role } = useContext(UserContext)
+  const can_view_analytics = ["admin", "manager"].includes(role)
   const [stats, set_stats] = useState(null)
   const [recent_sales, set_recent] = useState([])
   const [low_stock, set_low_stock] = useState([])
@@ -173,7 +184,7 @@ const AdminDashboard = () => {
             icon={TrendingUp}
             color="bg-blue-500"
             sub="This month"
-            to="/admin/analytics"
+            to={can_view_analytics ? "/admin/analytics" : undefined}
           />
           <StatCard
             title="Total Orders"
@@ -209,9 +220,11 @@ const AdminDashboard = () => {
               <h2 className="font-semibold text-gray-900">Revenue History</h2>
               <p className="text-xs text-gray-400 mt-0.5">Last 6 months</p>
             </div>
-            <Link to="/admin/analytics" className="text-xs text-gray-500 hover:text-gray-900 flex items-center gap-1">
-              Full analytics <ArrowRight size={12} />
-            </Link>
+            {can_view_analytics && (
+              <Link to="/admin/analytics" className="text-xs text-gray-500 hover:text-gray-900 flex items-center gap-1">
+                Full analytics <ArrowRight size={12} />
+              </Link>
+            )}
           </div>
           {chart_loading ? (
             <div className="h-48 flex items-center justify-center">
@@ -387,17 +400,19 @@ const AdminDashboard = () => {
         <h2 className="font-semibold text-gray-900 mb-4">Quick Actions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "New Sale", path: "/admin/orders", icon: ShoppingCart, color: "bg-blue-50 text-blue-700 hover:bg-blue-100" },
-            { label: "View Products", path: "/admin/inventory", icon: Package, color: "bg-green-50 text-green-700 hover:bg-green-100" },
-            { label: "View Reports", path: "/admin/reports", icon: TrendingUp, color: "bg-purple-50 text-purple-700 hover:bg-purple-100" },
-            { label: "Analytics", path: "/admin/analytics", icon: BarChart3, color: "bg-orange-50 text-orange-700 hover:bg-orange-100" },
-          ].map(action => (
-            <Link key={action.path} to={action.path}
-              className={`flex flex-col items-center gap-2 p-4 rounded-xl text-sm font-medium transition-colors ${action.color}`}>
-              <action.icon size={22} />
-              {action.label}
-            </Link>
-          ))}
+            { label: "New Sale", path: "/admin/orders", icon: ShoppingCart, color: "bg-blue-50 text-blue-700 hover:bg-blue-100", roles: ["admin", "manager", "sales_officer"] },
+            { label: "View Products", path: "/admin/inventory", icon: Package, color: "bg-green-50 text-green-700 hover:bg-green-100", roles: ["admin", "manager", "sales_officer"] },
+            { label: "View Reports", path: "/admin/reports", icon: TrendingUp, color: "bg-purple-50 text-purple-700 hover:bg-purple-100", roles: ["admin", "manager"] },
+            { label: "Analytics", path: "/admin/analytics", icon: BarChart3, color: "bg-orange-50 text-orange-700 hover:bg-orange-100", roles: ["admin", "manager"] },
+          ]
+            .filter(action => !action.roles || action.roles.includes(role))
+            .map(action => (
+              <Link key={action.path} to={action.path}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl text-sm font-medium transition-colors ${action.color}`}>
+                <action.icon size={22} />
+                {action.label}
+              </Link>
+            ))}
         </div>
       </div>
     </div>
