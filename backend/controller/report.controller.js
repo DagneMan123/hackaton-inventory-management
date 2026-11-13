@@ -5,17 +5,80 @@ import PDFDocument from "pdfkit";
 
 const money = (v) => parseFloat(v || 0).toFixed(2);
 
+const parseDayBounds = (dateStr) => {
+  if (!dateStr) {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { start, end, dateStr: now.toISOString().split("T")[0] };
+  }
+  const parts = dateStr.split("-").map(Number);
+  const start = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+  const end = new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999);
+  return { start, end, dateStr };
+};
+
+const buildStatusCondition = (status) => {
+  if (status === "approved") return { [Op.in]: ["approved", "completed"] };
+  if (status === "pending") return "pending";
+  if (status === "completed") return "completed";
+  if (status && status !== "all") return status;
+  return { [Op.ne]: "rejected" };
+};
+
+const computeTotals = (sales) =>
+  sales.reduce(
+    (acc, s) => ({
+      subtotal: acc.subtotal + parseFloat(s.subtotal || 0),
+      discountAmount: acc.discountAmount + parseFloat(s.discountAmount || 0),
+      taxableAmount: acc.taxableAmount + parseFloat(s.taxableAmount || 0),
+      vatAmount: acc.vatAmount + parseFloat(s.vatAmount || 0),
+      totalAmount: acc.totalAmount + parseFloat(s.totalAmount || 0),
+    }),
+    { subtotal: 0, discountAmount: 0, taxableAmount: 0, vatAmount: 0, totalAmount: 0 }
+  );
+
+export const getAllSalesReport = async (req, res) => {
+  try {
+    const { status = "all", startDate, endDate } = req.query;
+    const where = { status: buildStatusCondition(status) };
+
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) {
+        const parts = startDate.split("-").map(Number);
+        where.createdAt[Op.gte] = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+      }
+      if (endDate) {
+        const parts = endDate.split("-").map(Number);
+        where.createdAt[Op.lte] = new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999);
+      }
+    }
+
+    const sales = await Sale.findAll({
+      where,
+      include: [
+        { model: User, as: "preparedBy", attributes: ["id", "name"] },
+        { model: User, as: "approvedBy", attributes: ["id", "name"] },
+        { model: SaleItem, as: "items" },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    res.json({ success: true, sales, totals: computeTotals(sales) });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const getDailyReport = async (req, res) => {
   try {
-    const dateStr = req.query.date || new Date().toISOString().split("T")[0];
-    const start = new Date(dateStr);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(dateStr);
-    end.setHours(23, 59, 59, 999);
+    const { start, end, dateStr } = parseDayBounds(req.query.date);
+    const status = req.query.status || "all";
 
     const sales = await Sale.findAll({
       where: {
-        status: { [Op.in]: ["approved", "completed"] },
+        status: buildStatusCondition(status),
         createdAt: { [Op.between]: [start, end] },
       },
       include: [
@@ -26,17 +89,7 @@ export const getDailyReport = async (req, res) => {
       order: [["createdAt", "ASC"]],
     });
 
-    const totals = sales.reduce(
-      (acc, s) => ({
-        subtotal: acc.subtotal + parseFloat(s.subtotal),
-        discountAmount: acc.discountAmount + parseFloat(s.discountAmount),
-        vatAmount: acc.vatAmount + parseFloat(s.vatAmount),
-        totalAmount: acc.totalAmount + parseFloat(s.totalAmount),
-      }),
-      { subtotal: 0, discountAmount: 0, vatAmount: 0, totalAmount: 0 }
-    );
-
-    res.json({ success: true, date: dateStr, sales, totals });
+    res.json({ success: true, date: dateStr, sales, totals: computeTotals(sales) });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -46,13 +99,14 @@ export const getMonthlyReport = async (req, res) => {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
     const month = parseInt(req.query.month) || new Date().getMonth() + 1;
+    const status = req.query.status || "all";
 
-    const start = new Date(year, month - 1, 1);
+    const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
     const end = new Date(year, month, 0, 23, 59, 59, 999);
 
     const sales = await Sale.findAll({
       where: {
-        status: { [Op.in]: ["approved", "completed"] },
+        status: buildStatusCondition(status),
         createdAt: { [Op.between]: [start, end] },
       },
       include: [
@@ -63,22 +117,11 @@ export const getMonthlyReport = async (req, res) => {
       order: [["createdAt", "ASC"]],
     });
 
-    const totals = sales.reduce(
-      (acc, s) => ({
-        subtotal: acc.subtotal + parseFloat(s.subtotal),
-        discountAmount: acc.discountAmount + parseFloat(s.discountAmount),
-        vatAmount: acc.vatAmount + parseFloat(s.vatAmount),
-        totalAmount: acc.totalAmount + parseFloat(s.totalAmount),
-      }),
-      { subtotal: 0, discountAmount: 0, vatAmount: 0, totalAmount: 0 }
-    );
-
-    res.json({ success: true, year, month, sales, totals });
+    res.json({ success: true, year, month, sales, totals: computeTotals(sales) });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
 
 export const getStockReport = async (req, res) => {
   try {
@@ -96,24 +139,30 @@ export const getStockReport = async (req, res) => {
   }
 };
 
-
 export const exportReport = async (req, res) => {
   try {
-    const { type = "daily", format = "xlsx", date, year, month } = req.query;
+    const { type = "daily", format = "xlsx", date, year, month, status = "all" } = req.query;
 
     let data = {};
     let title = "";
 
-    if (type === "daily") {
-      const dateStr = date || new Date().toISOString().split("T")[0];
-      const start = new Date(dateStr);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(dateStr);
-      end.setHours(23, 59, 59, 999);
-
+    if (type === "all") {
+      const sales = await Sale.findAll({
+        where: { status: buildStatusCondition(status) },
+        include: [
+          { model: User, as: "preparedBy", attributes: ["id", "name"] },
+          { model: User, as: "approvedBy", attributes: ["id", "name"] },
+          { model: SaleItem, as: "items" },
+        ],
+        order: [["createdAt", "DESC"]],
+      });
+      data = { sales };
+      title = "All Sales Report";
+    } else if (type === "daily") {
+      const { start, end, dateStr } = parseDayBounds(date);
       const sales = await Sale.findAll({
         where: {
-          status: { [Op.in]: ["approved", "completed"] },
+          status: buildStatusCondition(status),
           createdAt: { [Op.between]: [start, end] },
         },
         include: [
@@ -129,12 +178,12 @@ export const exportReport = async (req, res) => {
     } else if (type === "monthly") {
       const y = parseInt(year) || new Date().getFullYear();
       const m = parseInt(month) || new Date().getMonth() + 1;
-      const start = new Date(y, m - 1, 1);
+      const start = new Date(y, m - 1, 1, 0, 0, 0, 0);
       const end = new Date(y, m, 0, 23, 59, 59, 999);
 
       const sales = await Sale.findAll({
         where: {
-          status: { [Op.in]: ["approved", "completed"] },
+          status: buildStatusCondition(status),
           createdAt: { [Op.between]: [start, end] },
         },
         include: [
@@ -206,7 +255,7 @@ function generateExcelReport(type, data, title) {
   } else {
 
     const headers = [
-      "No.", "Sale #", "Date", "Customer", "Subtotal", "Discount", "Taxable Amount", "VAT (15%)", "Total", "Prepared By", "Approved By",
+      "No.", "Sale #", "Date", "Customer", "Subtotal", "Discount", "Taxable Amount", "VAT (15%)", "Total", "Status", "Prepared By", "Approved By",
     ];
 
     const rows = data.sales.map((s, i) => [
@@ -219,20 +268,21 @@ function generateExcelReport(type, data, title) {
       parseFloat(s.taxableAmount),
       parseFloat(s.vatAmount),
       parseFloat(s.totalAmount),
+      s.status || "—",
       s.preparedBy?.name || "",
       s.approvedBy?.name || "",
     ]);
 
     const totals = data.sales.reduce(
       (acc, s) => {
-        acc[4] += parseFloat(s.subtotal);
-        acc[5] += parseFloat(s.discountAmount);
-        acc[6] += parseFloat(s.taxableAmount);
-        acc[7] += parseFloat(s.vatAmount);
-        acc[8] += parseFloat(s.totalAmount);
+        acc[4] += parseFloat(s.subtotal || 0);
+        acc[5] += parseFloat(s.discountAmount || 0);
+        acc[6] += parseFloat(s.taxableAmount || 0);
+        acc[7] += parseFloat(s.vatAmount || 0);
+        acc[8] += parseFloat(s.totalAmount || 0);
         return acc;
       },
-      ["", "TOTAL", "", "", 0, 0, 0, 0, 0, "", ""]
+      ["", "TOTAL", "", "", 0, 0, 0, 0, 0, "", "", ""]
     );
 
     const sheetData = [
